@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Note Master - Clef Identification & Assessment Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- VexFlow for musical notation rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+    <!-- Tone.js for web audio pitch synthesis -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap');
+        body {
+            font-family: 'Outfit', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* SVG Staff rendering customization */
+        #staff-container svg {
+            margin: 0 auto;
+            max-width: 100%;
+            height: auto;
+            filter: drop-shadow(0 4px 6px -1px rgba(0, 0, 0, 0.3));
+        }
+
+        .note-btn {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .note-btn:active {
+            transform: scale(0.92);
+        }
+
+        /* Pulse effects for feedback */
+        @keyframes correct-glow {
+            0%, 100% { box-shadow: 0 0 0px rgba(34, 197, 94, 0); }
+            50% { box-shadow: 0 0 25px rgba(34, 197, 94, 0.6); }
+        }
+        .correct-flash {
+            animation: correct-glow 0.4s ease-out;
+        }
+
+        @keyframes wrong-shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-8px); }
+            40%, 80% { transform: translateX(8px); }
+        }
+        .wrong-shake {
+            animation: wrong-shake 0.4s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <!-- HEADER / NAVBAR -->
+    <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-40 px-4 py-3">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                    <i class="fa-solid fa-music text-xl font-black"></i>
+                </div>
+                <div>
+                    <h1 class="font-black text-lg sm:text-xl tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                        Note Master
+                    </h1>
+                    <p class="text-xs text-blue-400 font-semibold hidden sm:block">Treble & Bass Clef (3 Ledger Lines Extended Range)</p>
+                </div>
+            </div>
+
+            <!-- Header Nav Buttons -->
+            <div class="flex items-center gap-2">
+                <button onclick="toggleSound()" id="sound-btn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs sm:text-sm font-semibold flex items-center gap-2 border border-slate-700">
+                    <i id="sound-icon" class="fa-solid fa-volume-high text-blue-400"></i>
+                    <span id="sound-text" class="hidden sm:inline">Audio On</span>
+                </button>
+                <button onclick="openTeacherModal()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/20 border border-indigo-500/40">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                    <span>Teacher Tracker</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-4xl w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col justify-center">
+
+        <!-- STUDENT IDENTIFIER BANNER -->
+        <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-800 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
+            <div class="flex items-center gap-2">
+                <span class="text-slate-400 font-medium">Student Name:</span>
+                <input type="text" id="student-name-input" placeholder="Enter student name..." value="Guest Student" onchange="updateStudentName(this.value)" class="bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-blue-500 font-bold text-xs sm:text-sm w-36 sm:w-48">
+            </div>
+            <div class="flex items-center gap-2 sm:gap-4">
+                <span class="text-slate-400">Class/Period:</span>
+                <input type="text" id="class-id-input" placeholder="e.g. Period 2" value="Music 101" onchange="updateClassId(this.value)" class="bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-blue-500 font-bold text-xs sm:text-sm w-28 sm:w-36">
+            </div>
+        </div>
+
+        <!-- CLEF & LEDGER RANGE CONTROLS -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-4">
+            <button onclick="setClefFilter('treble')" id="clef-btn-treble" class="clef-tab p-3 rounded-2xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 flex items-center justify-center gap-2 transition-all">
+                <span class="text-xl">𝄞</span>
+                <span class="text-xs sm:text-sm font-bold">Treble Clef</span>
+            </button>
+            <button onclick="setClefFilter('bass')" id="clef-btn-bass" class="clef-tab p-3 rounded-2xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 flex items-center justify-center gap-2 transition-all">
+                <span class="text-xl">𝄢</span>
+                <span class="text-xs sm:text-sm font-bold">Bass Clef</span>
+            </button>
+            <button onclick="setClefFilter('both')" id="clef-btn-both" class="clef-tab active p-3 rounded-2xl border border-blue-500/60 bg-blue-950/30 text-blue-300 flex items-center justify-center gap-2 transition-all">
+                <span class="text-xl">𝄞+𝄢</span>
+                <span class="text-xs sm:text-sm font-bold">Both Clefs (Mixed)</span>
+            </button>
+        </div>
+
+        <!-- STATS & ACCURACY OVERVIEW BAR -->
+        <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-800 mb-4 flex items-center justify-between text-xs sm:text-sm font-semibold">
+            <div class="flex items-center gap-4 sm:gap-6">
+                <div>
+                    <span class="text-slate-400">Total:</span>
+                    <span id="stat-total" class="font-extrabold text-white ml-1">0</span>
+                </div>
+                <div>
+                    <span class="text-slate-400">Correct:</span>
+                    <span id="stat-correct" class="font-extrabold text-emerald-400 ml-1">0</span>
+                </div>
+                <div>
+                    <span class="text-slate-400">Accuracy:</span>
+                    <span id="stat-accuracy" class="font-extrabold text-blue-400 ml-1">0%</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1.5 text-amber-400">
+                    <i class="fa-solid fa-fire"></i>
+                    <span id="stat-streak" class="font-black">0</span>
+                </div>
+                <button onclick="resetAssessmentData()" class="text-xs text-slate-500 hover:text-rose-400 transition ml-2 underline">
+                    Reset Session
+                </button>
+            </div>
+        </div>
+
+        <!-- MAIN NOTE DISPLAY CARD -->
+        <div id="game-card" class="bg-slate-900/95 rounded-3xl p-5 sm:p-7 border border-slate-800 shadow-2xl relative backdrop-blur transition-all">
+            
+            <!-- CLEF & NOTE LOCATION TAG -->
+            <div class="flex items-center justify-between mb-2">
+                <span id="clef-badge" class="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    Treble Clef
+                </span>
+                <span id="ledger-hint-badge" class="text-xs text-slate-400 font-medium bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                    Range: Up to 3 Ledger Lines
+                </span>
+            </div>
+
+            <!-- SHEET MUSIC CANVAS CONTAINER -->
+            <div class="relative min-h-[220px] flex items-center justify-center bg-slate-950/90 rounded-2xl border border-slate-800/80 my-3 p-4 shadow-inner">
+                <div id="staff-container" class="w-full flex justify-center items-center"></div>
+            </div>
+
+            <p class="text-center font-bold text-slate-300 text-xs sm:text-sm my-3">
+                Select the correct note name for the displayed pitch:
+            </p>
+
+            <!-- NOTE ANSWER BUTTONS (A - G) -->
+            <div class="grid grid-cols-7 gap-1.5 sm:gap-3 my-2">
+                <button onclick="submitAnswer('A')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">A</button>
+                <button onclick="submitAnswer('B')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">B</button>
+                <button onclick="submitAnswer('C')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">C</button>
+                <button onclick="submitAnswer('D')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">D</button>
+                <button onclick="submitAnswer('E')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">E</button>
+                <button onclick="submitAnswer('F')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">F</button>
+                <button onclick="submitAnswer('G')" class="note-btn p-3 sm:p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-blue-600 border border-slate-700/80 text-white font-extrabold text-lg sm:text-xl shadow-md">G</button>
+            </div>
+
+            <p class="text-center text-[11px] text-slate-500 mt-3">
+                Keyboard Shortcut: Press keys <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-mono">A</kbd> through <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-mono">G</kbd> on your keyboard
+            </p>
+        </div>
+
+    </main>
+
+    <!-- TEACHER ASSESSMENT DASHBOARD MODAL -->
+    <div id="teacher-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+        <div class="bg-slate-900 border border-slate-800 p-5 sm:p-7 rounded-3xl max-w-3xl w-full shadow-2xl relative flex flex-col max-h-[90vh]">
+            
+            <!-- MODAL HEADER -->
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-clipboard-check"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Teacher Assessment Tracker</h2>
+                        <p class="text-xs text-slate-400">Detailed student accuracy logs & printable assessment reports</p>
+                    </div>
+                </div>
+                <button onclick="closeTeacherModal()" class="text-slate-400 hover:text-white p-2 rounded-xl bg-slate-800">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- MODAL BODY OVERVIEW STATS -->
+            <div class="py-4 space-y-4 overflow-y-auto flex-grow pr-1">
+                
+                <!-- SUMMARY CARDS -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-center">
+                        <span class="text-xs text-slate-400 font-semibold block mb-1">Student</span>
+                        <span id="report-student-name" class="font-black text-sm text-white truncate block">Guest Student</span>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-center">
+                        <span class="text-xs text-slate-400 font-semibold block mb-1">Total Attempted</span>
+                        <span id="report-total" class="font-black text-xl text-white">0</span>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-center">
+                        <span class="text-xs text-slate-400 font-semibold block mb-1">Correct Answers</span>
+                        <span id="report-correct" class="font-black text-xl text-emerald-400">0</span>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-center">
+                        <span class="text-xs text-slate-400 font-semibold block mb-1">Accuracy Score</span>
+                        <span id="report-accuracy" class="font-black text-xl text-blue-400">0%</span>
+                    </div>
+                </div>
+
+                <!-- ACCURACY BY CLEF TYPE -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-slate-300 flex items-center gap-1">
+                                <span class="text-base">𝄞</span> Treble Clef Performance
+                            </span>
+                            <span id="report-treble-acc" class="text-xs font-black text-blue-400">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                            <div id="bar-treble-acc" class="bg-blue-500 h-full w-0 transition-all duration-500"></div>
+                        </div>
+                        <p id="report-treble-count" class="text-[11px] text-slate-500 mt-2">0 / 0 answered correctly</p>
+                    </div>
+
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-slate-300 flex items-center gap-1">
+                                <span class="text-base">𝄢</span> Bass Clef Performance
+                            </span>
+                            <span id="report-bass-acc" class="text-xs font-black text-indigo-400">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                            <div id="bar-bass-acc" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+                        </div>
+                        <p id="report-bass-count" class="text-[11px] text-slate-500 mt-2">0 / 0 answered correctly</p>
+                    </div>
+                </div>
+
+                <!-- LEDGER LINE BREAKDOWN -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h4 class="text-xs font-bold text-slate-300 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-lines-leaning text-indigo-400"></i> Ledger Line Accuracy Breakdown
+                    </h4>
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div class="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 text-[10px] block">Standard Staff</span>
+                            <span id="ledger-0-acc" class="font-extrabold text-slate-200">0%</span>
+                        </div>
+                        <div class="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 text-[10px] block">1 Ledger Line</span>
+                            <span id="ledger-1-acc" class="font-extrabold text-slate-200">0%</span>
+                        </div>
+                        <div class="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 text-[10px] block">2-3 Ledger Lines</span>
+                            <span id="ledger-23-acc" class="font-extrabold text-slate-200">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RECENT ASSESSMENT LOG TABLE -->
+                <div class="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
+                    <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+                        <h4 class="text-xs font-bold text-slate-300">Answer History (Most Recent First)</h4>
+                        <span class="text-[10px] text-slate-500">Auto-saved session data</span>
+                    </div>
+                    <div class="max-h-48 overflow-y-auto">
+                        <table class="w-full text-left text-xs text-slate-400">
+                            <thead class="bg-slate-900/80 text-[10px] text-slate-500 uppercase sticky top-0">
+                                <tr>
+                                    <th class="p-2.5">Clef</th>
+                                    <th class="p-2.5">Pitch (VexKey)</th>
+                                    <th class="p-2.5">Ledger Lines</th>
+                                    <th class="p-2.5">Student Pick</th>
+                                    <th class="p-2.5 text-right">Result</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assessment-log-rows">
+                                <tr>
+                                    <td colspan="5" class="p-4 text-center text-slate-600">No assessment questions answered yet in this session.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- MODAL ACTIONS & EXPORTS -->
+            <div class="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                <button onclick="exportCSV()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-2 border border-slate-700">
+                    <i class="fa-solid fa-file-csv text-emerald-400 text-sm"></i> Export CSV Data
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="printAssessmentReport()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/20">
+                        <i class="fa-solid fa-print text-sm"></i> Print Assessment Report
+                    </button>
+                    <button onclick="closeTeacherModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs">
+                        Close
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="p-4 text-center text-xs text-slate-500 border-t border-slate-900">
+        <p>Interactive Music Theory Assessment • Treble & Bass Clefs with Up to 3 Ledger Lines</p>
+    </footer>
+
+    <!-- GAME & ASSESSMENT SCRIPT -->
+    <script>
+        /* ===================================================================
+           1. NOTE DEFINITIONS & EXTENDED RANGE DATA (3 LEDGER LINES ABOVE & BELOW)
+           =================================================================== */
+        
+        // Treble Clef Notes: From G3 (3 ledger lines below) to C6 (3 ledger lines above)
+        const TREBLE_NOTES = [
+            { note: 'G', octave: 3, key: 'g/3', ledgers: 3, side: 'below' },
+            { note: 'A', octave: 3, key: 'a/3', ledgers: 2, side: 'below' },
+            { note: 'B', octave: 3, key: 'b/3', ledgers: 2, side: 'below' },
+            { note: 'C', octave: 4, key: 'c/4', ledgers: 1, side: 'below' },
+            { note: 'D', octave: 4, key: 'd/4', ledgers: 0, side: 'none' },
+            { note: 'E', octave: 4, key: 'e/4', ledgers: 0, side: 'none' }, // Bottom Line
+            { note: 'F', octave: 4, key: 'f/4', ledgers: 0, side: 'none' },
+            { note: 'G', octave: 4, key: 'g/4', ledgers: 0, side: 'none' },
+            { note: 'A', octave: 4, key: 'a/4', ledgers: 0, side: 'none' },
+            { note: 'B', octave: 4, key: 'b/4', ledgers: 0, side: 'none' },
+            { note: 'C', octave: 5, key: 'c/5', ledgers: 0, side: 'none' },
+            { note: 'D', octave: 5, key: 'd/5', ledgers: 0, side: 'none' },
+            { note: 'E', octave: 5, key: 'e/5', ledgers: 0, side: 'none' },
+            { note: 'F', octave: 5, key: 'f/5', ledgers: 0, side: 'none' }, // Top Line
+            { note: 'G', octave: 5, key: 'g/5', ledgers: 0, side: 'none' },
+            { note: 'A', octave: 5, key: 'a/5', ledgers: 1, side: 'above' },
+            { note: 'B', octave: 5, key: 'b/5', ledgers: 2, side: 'above' },
+            { note: 'C', octave: 6, key: 'c/6', ledgers: 3, side: 'above' }
+        ];
+
+        // Bass Clef Notes: From B1 (3 ledger lines below) to E4 (3 ledger lines above)
+        const BASS_NOTES = [
+            { note: 'B', octave: 1, key: 'b/1', ledgers: 3, side: 'below' },
+            { note: 'C', octave: 2, key: 'c/2', ledgers: 2, side: 'below' },
+            { note: 'D', octave: 2, key: 'd/2', ledgers: 2, side: 'below' },
+            { note: 'E', octave: 2, key: 'e/2', ledgers: 1, side: 'below' },
+            { note: 'F', octave: 2, key: 'f/2', ledgers: 0, side: 'none' },
+            { note: 'G', octave: 2, key: 'g/2', ledgers: 0, side: 'none' }, // Bottom Line
+            { note: 'A', octave: 2, key: 'a/2', ledgers: 0, side: 'none' },
+            { note: 'B', octave: 2, key: 'b/2', ledgers: 0, side: 'none' },
+            { note: 'C', octave: 3, key: 'c/3', ledgers: 0, side: 'none' },
+            { note: 'D', octave: 3, key: 'd/3', ledgers: 0, side: 'none' },
+            { note: 'E', octave: 3, key: 'e/3', ledgers: 0, side: 'none' },
+            { note: 'F', octave: 3, key: 'f/3', ledgers: 0, side: 'none' },
+            { note: 'G', octave: 3, key: 'g/3', ledgers: 0, side: 'none' },
+            { note: 'A', octave: 3, key: 'a/3', ledgers: 0, side: 'none' }, // Top Line
+            { note: 'B', octave: 3, key: 'b/3', ledgers: 0, side: 'none' },
+            { note: 'C', octave: 4, key: 'c/4', ledgers: 1, side: 'above' }, // Middle C
+            { note: 'D', octave: 4, key: 'd/4', ledgers: 2, side: 'above' },
+            { note: 'E', octave: 4, key: 'e/4', ledgers: 3, side: 'above' }
+        ];
+
+        /* ===================================================================
+           2. STATE & ASSESSMENT TRACKING
+           =================================================================== */
+        let state = {
+            studentName: "Guest Student",
+            classId: "Music 101",
+            clefFilter: "both", // "treble", "bass", or "both"
+            currentNote: null,
+            currentClef: "treble",
+            audioEnabled: true,
+            streak: 0,
+            isLocked: false,
+
+            // Teacher Assessment Data Storage
+            stats: {
+                totalAttempted: 0,
+                totalCorrect: 0,
+                trebleAttempted: 0,
+                trebleCorrect: 0,
+                bassAttempted: 0,
+                bassCorrect: 0,
+                ledger0Attempted: 0,
+                ledger0Correct: 0,
+                ledger1Attempted: 0,
+                ledger1Correct: 0,
+                ledger23Attempted: 0,
+                ledger23Correct: 0,
+                logs: [] // Array of individual question records
+            }
+        };
+
+        // Pitch Synth
+        let synth = null;
+
+        /* ===================================================================
+           3. INITIALIZATION
+           =================================================================== */
+        window.onload = function () {
+            setupAudio();
+            setupKeyboardShortcuts();
+            
+            // Handle window resize debounce
+            window.addEventListener('resize', debounce(() => {
+                if (state.currentNote) {
+                    renderStaff(state.currentClef, state.currentNote);
+                }
+            }, 150));
+
+            // Load saved student name from localStorage if available
+            const savedName = localStorage.getItem('notemaster_student');
+            const savedClass = localStorage.getItem('notemaster_class');
+            if (savedName) {
+                state.studentName = savedName;
+                document.getElementById('student-name-input').value = savedName;
+            }
+            if (savedClass) {
+                state.classId = savedClass;
+                document.getElementById('class-id-input').value = savedClass;
+            }
+
+            nextQuestion();
+        };
+
+        function setupAudio() {
+            try {
+                synth = new Tone.Synth({
+                    oscillator: { type: "triangle" },
+                    envelope: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.5 }
+                }).toDestination();
+                synth.volume.value = -6;
+            } catch (e) {
+                console.warn("Audio Context setup error:", e);
+            }
+        }
+
+        function toggleSound() {
+            state.audioEnabled = !state.audioEnabled;
+            const icon = document.getElementById('sound-icon');
+            const text = document.getElementById('sound-text');
+
+            if (state.audioEnabled) {
+                icon.className = "fa-solid fa-volume-high text-blue-400";
+                text.innerText = "Audio On";
+                if (Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+            } else {
+                icon.className = "fa-solid fa-volume-xmark text-slate-500";
+                text.innerText = "Audio Off";
+            }
+        }
+
+        function setupKeyboardShortcuts() {
+            window.addEventListener('keydown', (e) => {
+                if (document.activeElement.tagName === 'INPUT') return;
+                const key = e.key.toUpperCase();
+                if (['A', 'B', 'C', 'D', 'E', 'F', 'G'].includes(key)) {
+                    submitAnswer(key);
+                }
+            });
+        }
+
+        function updateStudentName(val) {
+            state.studentName = val.trim() || "Guest Student";
+            localStorage.setItem('notemaster_student', state.studentName);
+        }
+
+        function updateClassId(val) {
+            state.classId = val.trim() || "Music 101";
+            localStorage.setItem('notemaster_class', state.classId);
+        }
+
+        /* ===================================================================
+           4. VEXFLOW SHEET MUSIC RENDERER
+           =================================================================== */
+        function renderStaff(clef, noteObj) {
+            const container = document.getElementById('staff-container');
+            container.innerHTML = '';
+
+            const { Renderer, Stave, StaveNote, Formatter } = Vex.Flow;
+
+            const containerWidth = Math.min(container.clientWidth || 340, 420);
+            const renderer = new Renderer(container, Renderer.Backends.SVG);
+            renderer.resize(containerWidth, 180);
+
+            const context = renderer.getContext();
+            context.setFont('Arial', 10, '');
+            context.setStrokeStyle('#94a3b8');
+            context.setFillStyle('#94a3b8');
+
+            const staveX = (containerWidth - 280) / 2;
+            const stave = new Stave(staveX, 35, 280);
+            stave.addClef(clef);
+            stave.setContext(context);
+            stave.draw();
+
+            // Create StaveNote
+            const staveNote = new StaveNote({
+                clef: clef,
+                keys: [noteObj.key],
+                duration: "q"
+            });
+
+            staveNote.setStyle({ fillStyle: "#38bdf8", strokeStyle: "#38bdf8" });
+
+            const voice = new Vex.Flow.Voice({ num_beats: 1, beat_value: 4 });
+            voice.addTickables([staveNote]);
+
+            new Formatter().joinVoices([voice]).format([voice], 200);
+            voice.draw(context, stave);
+        }
+
+        /* ===================================================================
+           5. GAME & QUIZ LOGIC
+           =================================================================== */
+        function setClefFilter(filter) {
+            state.clefFilter = filter;
+
+            document.querySelectorAll('.clef-tab').forEach(btn => {
+                btn.className = "clef-tab p-3 rounded-2xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 flex items-center justify-center gap-2 transition-all";
+            });
+
+            const activeBtn = document.getElementById(`clef-btn-${filter}`);
+            activeBtn.className = "clef-tab active p-3 rounded-2xl border border-blue-500/60 bg-blue-950/30 text-blue-300 flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/10";
+
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            state.isLocked = false;
+
+            // Determine Clef based on filter setting
+            if (state.clefFilter === 'treble') {
+                state.currentClef = 'treble';
+            } else if (state.clefFilter === 'bass') {
+                state.currentClef = 'bass';
+            } else {
+                state.currentClef = Math.random() < 0.5 ? 'treble' : 'bass';
+            }
+
+            // Pick random note from selected clef dataset
+            const dataset = state.currentClef === 'treble' ? TREBLE_NOTES : BASS_NOTES;
+            state.currentNote = dataset[Math.floor(Math.random() * dataset.length)];
+
+            // Update UI Badges
+            const clefBadge = document.getElementById('clef-badge');
+            clefBadge.innerText = `${state.currentClef.toUpperCase()} CLEF`;
+            clefBadge.className = state.currentClef === 'treble'
+                ? "text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                : "text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
+
+            const ledgerHint = document.getElementById('ledger-hint-badge');
+            if (state.currentNote.ledgers === 0) {
+                ledgerHint.innerText = "On Staff Lines/Spaces";
+            } else {
+                ledgerHint.innerText = `${state.currentNote.ledgers} Ledger Line${state.currentNote.ledgers > 1 ? 's' : ''} (${state.currentNote.side})`;
+            }
+
+            // Render Sheet Music Notation
+            renderStaff(state.currentClef, state.currentNote);
+        }
+
+        function submitAnswer(chosenNote) {
+            if (state.isLocked || !state.currentNote) return;
+
+            state.isLocked = true;
+            const isCorrect = (chosenNote === state.currentNote.note);
+            const gameCard = document.getElementById('game-card');
+
+            // Play pitch sound if audio enabled
+            if (state.audioEnabled && synth) {
+                try {
+                    if (Tone.context.state !== 'running') Tone.start();
+                    const pitch = state.currentNote.note + state.currentNote.octave;
+                    synth.triggerAttackRelease(pitch, "4n");
+                } catch(e) {}
+            }
+
+            // Record Assessment Data for Teacher Tracker
+            recordAssessment(chosenNote, isCorrect);
+
+            if (isCorrect) {
+                state.streak++;
+                gameCard.classList.add('correct-flash');
+                setTimeout(() => gameCard.classList.remove('correct-flash'), 400);
+
+                if (state.streak > 0 && state.streak % 10 === 0 && typeof confetti === 'function') {
+                    confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
+                }
+            } else {
+                state.streak = 0;
+                gameCard.classList.add('wrong-shake');
+                setTimeout(() => gameCard.classList.remove('wrong-shake'), 400);
+            }
+
+            updateTopStatsUI();
+
+            setTimeout(() => {
+                nextQuestion();
+            }, isCorrect ? 500 : 1200);
+        }
+
+        /* ===================================================================
+           6. TEACHER ASSESSMENT LOGGING & METRICS
+           =================================================================== */
+        function recordAssessment(chosenNote, isCorrect) {
+            const s = state.stats;
+            s.totalAttempted++;
+            if (isCorrect) s.totalCorrect++;
+
+            // Clef stats
+            if (state.currentClef === 'treble') {
+                s.trebleAttempted++;
+                if (isCorrect) s.trebleCorrect++;
+            } else {
+                s.bassAttempted++;
+                if (isCorrect) s.bassCorrect++;
+            }
+
+            // Ledger Line depth stats
+            const lCount = state.currentNote.ledgers;
+            if (lCount === 0) {
+                s.ledger0Attempted++;
+                if (isCorrect) s.ledger0Correct++;
+            } else if (lCount === 1) {
+                s.ledger1Attempted++;
+                if (isCorrect) s.ledger1Correct++;
+            } else {
+                s.ledger23Attempted++;
+                if (isCorrect) s.ledger23Correct++;
+            }
+
+            // Log entry
+            const logEntry = {
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                clef: state.currentClef,
+                noteKey: state.currentNote.key.toUpperCase(),
+                targetNote: state.currentNote.note,
+                chosenNote: chosenNote,
+                ledgers: state.currentNote.ledgers,
+                side: state.currentNote.side,
+                isCorrect: isCorrect
+            };
+
+            s.logs.unshift(logEntry); // Most recent first
+        }
+
+        function updateTopStatsUI() {
+            const s = state.stats;
+            document.getElementById('stat-total').innerText = s.totalAttempted;
+            document.getElementById('stat-correct').innerText = s.totalCorrect;
+            
+            const acc = s.totalAttempted > 0 ? Math.round((s.totalCorrect / s.totalAttempted) * 100) : 0;
+            document.getElementById('stat-accuracy').innerText = `${acc}%`;
+            document.getElementById('stat-streak').innerText = state.streak;
+        }
+
+        function resetAssessmentData() {
+            if (confirm("Reset current student session metrics?")) {
+                state.stats = {
+                    totalAttempted: 0,
+                    totalCorrect: 0,
+                    trebleAttempted: 0,
+                    trebleCorrect: 0,
+                    bassAttempted: 0,
+                    bassCorrect: 0,
+                    ledger0Attempted: 0,
+                    ledger0Correct: 0,
+                    ledger1Attempted: 0,
+                    ledger1Correct: 0,
+                    ledger23Attempted: 0,
+                    ledger23Correct: 0,
+                    logs: []
+                };
+                state.streak = 0;
+                updateTopStatsUI();
+            }
+        }
+
+        /* ===================================================================
+           7. TEACHER DASHBOARD MODAL & REPORTING
+           =================================================================== */
+        function openTeacherModal() {
+            updateTeacherDashboardUI();
+            document.getElementById('teacher-modal').classList.remove('hidden');
+        }
+
+        function closeTeacherModal() {
+            document.getElementById('teacher-modal').classList.add('hidden');
+        }
+
+        function updateTeacherDashboardUI() {
+            const s = state.stats;
+
+            document.getElementById('report-student-name').innerText = `${state.studentName} (${state.classId})`;
+            document.getElementById('report-total').innerText = s.totalAttempted;
+            document.getElementById('report-correct').innerText = s.totalCorrect;
+
+            const totalAcc = s.totalAttempted > 0 ? Math.round((s.totalCorrect / s.totalAttempted) * 100) : 0;
+            document.getElementById('report-accuracy').innerText = `${totalAcc}%`;
+
+            // Treble breakdown
+            const trebleAcc = s.trebleAttempted > 0 ? Math.round((s.trebleCorrect / s.trebleAttempted) * 100) : 0;
+            document.getElementById('report-treble-acc').innerText = `${trebleAcc}%`;
+            document.getElementById('bar-treble-acc').style.width = `${trebleAcc}%`;
+            document.getElementById('report-treble-count').innerText = `${s.trebleCorrect} / ${s.trebleAttempted} correct`;
+
+            // Bass breakdown
+            const bassAcc = s.bassAttempted > 0 ? Math.round((s.bassCorrect / s.bassAttempted) * 100) : 0;
+            document.getElementById('report-bass-acc').innerText = `${bassAcc}%`;
+            document.getElementById('bar-bass-acc').style.width = `${bassAcc}%`;
+            document.getElementById('report-bass-count').innerText = `${s.bassCorrect} / ${s.bassAttempted} correct`;
+
+            // Ledger breakdown
+            const l0Acc = s.ledger0Attempted > 0 ? Math.round((s.ledger0Correct / s.ledger0Attempted) * 100) : 0;
+            const l1Acc = s.ledger1Attempted > 0 ? Math.round((s.ledger1Correct / s.ledger1Attempted) * 100) : 0;
+            const l23Acc = s.ledger23Attempted > 0 ? Math.round((s.ledger23Correct / s.ledger23Attempted) * 100) : 0;
+
+            document.getElementById('ledger-0-acc').innerText = `${l0Acc}% (${s.ledger0Correct}/${s.ledger0Attempted})`;
+            document.getElementById('ledger-1-acc').innerText = `${l1Acc}% (${s.ledger1Correct}/${s.ledger1Attempted})`;
+            document.getElementById('ledger-23-acc').innerText = `${l23Acc}% (${s.ledger23Correct}/${s.ledger23Attempted})`;
+
+            // Populate Table Rows
+            const tbody = document.getElementById('assessment-log-rows');
+            tbody.innerHTML = '';
+
+            if (s.logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-600">No assessment questions answered yet in this session.</td></tr>`;
+                return;
+            }
+
+            s.logs.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.className = "border-t border-slate-900 hover:bg-slate-900/50";
+                tr.innerHTML = `
+                    <td class="p-2.5 font-bold ${log.clef === 'treble' ? 'text-blue-400' : 'text-indigo-400'} capitalize">${log.clef}</td>
+                    <td class="p-2.5 font-extrabold text-slate-200">${log.noteKey}</td>
+                    <td class="p-2.5 text-slate-400">${log.ledgers} (${log.side})</td>
+                    <td class="p-2.5 font-bold ${log.isCorrect ? 'text-slate-300' : 'text-rose-400'}">${log.chosenNote}</td>
+                    <td class="p-2.5 text-right font-black ${log.isCorrect ? 'text-emerald-400' : 'text-rose-500'}">
+                        ${log.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        /* ===================================================================
+           8. EXPORT & PRINTING FUNCTIONS
+           =================================================================== */
+        function exportCSV() {
+            const s = state.stats;
+            if (s.logs.length === 0) {
+                alert("No assessment data available to export yet!");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += `Student Name,Class/Period,Total Attempted,Total Correct,Overall Accuracy (%)\n`;
+            const overallAcc = Math.round((s.totalCorrect / s.totalAttempted) * 100);
+            csvContent += `"${state.studentName}","${state.classId}",${s.totalAttempted},${s.totalCorrect},${overallAcc}%\n\n`;
+
+            csvContent += `Timestamp,Clef,Pitch,Ledger Lines,Side,Student Answer,Target Answer,Result\n`;
+
+            s.logs.forEach(log => {
+                csvContent += `"${log.timestamp}","${log.clef}","${log.noteKey}",${log.ledgers},"${log.side}","${log.chosenNote}","${log.targetNote}","${log.isCorrect ? 'CORRECT' : 'INCORRECT'}"\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Note_Assessment_${state.studentName.replace(/\s+/g, '_')}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function printAssessmentReport() {
+            const s = state.stats;
+            const overallAcc = s.totalAttempted > 0 ? Math.round((s.totalCorrect / s.totalAttempted) * 100) : 0;
+            const trebleAcc = s.trebleAttempted > 0 ? Math.round((s.trebleCorrect / s.trebleAttempted) * 100) : 0;
+            const bassAcc = s.bassAttempted > 0 ? Math.round((s.bassCorrect / s.bassAttempted) * 100) : 0;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Assessment Report - ${state.studentName}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
+                        h1 { color: #1e3a8a; margin-bottom: 5px; }
+                        .header-box { border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 20px; }
+                        .stats-grid { display: flex; gap: 20px; margin-bottom: 20px; }
+                        .stat-card { border: 1px solid #ccc; padding: 10px 15px; border-radius: 8px; flex: 1; }
+                        .stat-card h3 { margin: 0; font-size: 12px; color: #666; }
+                        .stat-card p { margin: 5px 0 0 0; font-size: 20px; font-weight: bold; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f3f4f6; }
+                        .correct { color: green; font-weight: bold; }
+                        .incorrect { color: red; font-weight: bold; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header-box">
+                        <h1>Music Note Identification Assessment Report</h1>
+                        <p><strong>Student:</strong> ${state.studentName} | <strong>Class:</strong> ${state.classId} | <strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>Total Attempted</h3>
+                            <p>${s.totalAttempted}</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Correct Answers</h3>
+                            <p>${s.totalCorrect}</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Accuracy Score</h3>
+                            <p>${overallAcc}%</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Treble / Bass Acc</h3>
+                            <p>${trebleAcc}% / ${bassAcc}%</p>
+                        </div>
+                    </div>
+
+                    <h3>Detailed Question History</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Clef</th>
+                                <th>Pitch</th>
+                                <th>Ledger Lines</th>
+                                <th>Student Pick</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${s.logs.map(log => `
+                                <tr>
+                                    <td>${log.timestamp}</td>
+                                    <td>${log.clef}</td>
+                                    <td>${log.noteKey}</td>
+                                    <td>${log.ledgers} (${log.side})</td>
+                                    <td>${log.chosenNote}</td>
+                                    <td class="${log.isCorrect ? 'correct' : 'incorrect'}">${log.isCorrect ? 'CORRECT' : 'INCORRECT'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); }, 250);
+        }
+
+        /* Helper Debounce */
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+    </script>
+</body>
+</html>
